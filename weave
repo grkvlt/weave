@@ -34,6 +34,7 @@ usage() {
     echo "weave status"
     echo "weave version"
     echo "weave stop"
+    echo "weave put-dns    <cidr> [<cidr> ...] <container_id> [-fqdn fqdn]"
     echo "weave stop-dns"
     echo "weave reset"
     echo
@@ -535,22 +536,28 @@ dns_args() {
     DNS_ARGS="$DNS_ARG $DNS_SEARCH_ARG"
 }
 
-# Perform operation $1 on local DNS database, for container ID $2 at
-# addresses $3, $4, ...  This function is only called when we know $2
-# is a valid container name
+# Perform operation $1 on container ID $2 to local DNS database at addresses $3, $4 ...
+# followed by an optional fully-qualified domain name. This function is only called
+# where we know $2 is a valid container name
 tell_dns() {
     METHOD="$1"
     CONTAINER_ID="$2"
     shift 2
-
+    collect_cidr_args "$@"
+    shift $CIDR_COUNT
+    FQDN="$1"
     if ! status=$(docker inspect --format='{{.State.Running}}' $DNS_CONTAINER_NAME 2>/dev/null) || [ "$status" != "true" ] ; then
         # weavedns not running - silently return
         return
     fi
     # get the long form of the container ID
     CONTAINER=$(docker inspect --format='{{.Id}}' $CONTAINER_ID 2>/dev/null)
-    MORE_ARGS=$(docker inspect --format='--data-urlencode fqdn={{.Config.Hostname}}.{{.Config.Domainname}}.' $CONTAINER 2>/dev/null) && true
-    for ADDR; do
+    # get the container domain name if not set
+    if [ -z "$FQDN" ] ; then
+         FQDN=$(docker inspect --format='{{.Config.Hostname}}.{{.Config.Domainname}}.' $CONTAINER 2>/dev/null) && true
+    fi
+    MORE_ARGS="--data-urlencode fqdn=$FQDN"
+    for ADDR in $CIDR_ARGS; do
         http_call $DNS_CONTAINER_NAME $DNS_HTTP_PORT $METHOD /name/$CONTAINER/${ADDR%/*} $MORE_ARGS || true
     done
 }
@@ -562,13 +569,8 @@ populate_dns() {
         return 0
     fi
     for CONTAINER in $(docker ps -q --no-trunc); do
-        MORE_ARGS=$(docker inspect --format='--data-urlencode fqdn={{.Config.Hostname}}.{{.Config.Domainname}}.' $CONTAINER 2>/dev/null) && true
         if CONTAINER_IPS=$(with_container_netns $CONTAINER container_weave_addrs 2>&1 | sed -n -e 's/inet \([^/]*\)\/\(.*\)/\1/p') ; then
-            for IP in $CONTAINER_IPS; do
-                # NB: CONTAINER_IP is the IP of the weavedns
-                # container; it is set by wait_for_status.
-                http_call_ip $CONTAINER_IP $DNS_HTTP_PORT PUT /name/$CONTAINER/$IP $MORE_ARGS
-            done
+            tell_dns PUT $CONTAINER $CONTAINER_IPS
         fi
     done
 }
@@ -847,6 +849,19 @@ case "$COMMAND" in
         fi
         docker rm -f $CONTAINER_NAME >/dev/null 2>&1 || true
         conntrack -D -p udp --dport $PORT >/dev/null 2>&1 || true
+        ;;
+    put-dns)
+        collect_cidr_args "$@"
+        shift $CIDR_COUNT
+        [ $# -ge 1 ] || usage
+        CONTAINER_ID="$1"
+        if [ $# -eq 1 ]; then
+            FQDN=""
+        else
+            [ $# -eq 3 -a "$2" = "-fqdn" ] || usage
+            FQDN="$3"
+        fi
+        tell_dns PUT $CONTAINER_ID $CIDR_ARGS $FQDN
         ;;
     stop-dns)
         [ $# -eq 0 ] || usage
