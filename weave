@@ -28,8 +28,8 @@ usage() {
     echo "weave start      <cidr> [<cidr> ...] <container_id>"
     echo "weave attach     <cidr> [<cidr> ...] <container_id>"
     echo "weave detach     <cidr> [<cidr> ...] <container_id>"
-    echo "weave add-dns    <cidr> [<cidr> ...] <container_id> [-h <hostname>]"
-    echo "weave rm-dns     <cidr> [<cidr> ...] <container_id>"
+    echo "weave add-name   <cidr> [<cidr> ...] <container_id> [-h <hostname>]"
+    echo "weave rm-name    <cidr> [<cidr> ...] <container_id>"
     echo "weave expose     <cidr> [<cidr> ...] [-h <hostname>]"
     echo "weave hide       <cidr> [<cidr> ...]"
     echo "weave ps         [<container_id> ...]"
@@ -537,8 +537,9 @@ dns_args() {
     DNS_ARGS="$DNS_ARG $DNS_SEARCH_ARG"
 }
 
-# Perform operation $1 on local DNS database, for container ID $2 at
-# addresses $3, $4 ... Uses FQDN set on container and calls tell_dns_fqdn()
+# Perform operation $1 on local DNS database, for container ID $2
+# with an FQDN obtained from the container's configured hostname and
+# domain, at addresses $3, $4 ...
 tell_dns() {
     METHOD="$1"
     CONTAINER_ID="$2"
@@ -548,8 +549,8 @@ tell_dns() {
 }
 
 # Perform operation $1 on local DNS database, for container ID $2
-# with fully-qualified domain name $3 at addresses $4, $5 ... This
-# function is only called where we know $2 is a valid container name
+# with FQDN $3, at addresses $4, $5 ... This function is only called
+# where we know $2 is a valid container name
 tell_dns_fqdn() {
     METHOD="$1"
     CONTAINER_ID="$2"
@@ -809,7 +810,7 @@ case "$COMMAND" in
         with_container_netns $CONTAINER_ID detach $CIDR_ARGS >/dev/null
         tell_dns DELETE $CONTAINER_ID $CIDR_ARGS
         ;;
-    add-dns)
+    add-name)
         collect_cidr_args "$@"
         shift $CIDR_COUNT
         [ $# -ge 1 ] || usage
@@ -822,7 +823,7 @@ case "$COMMAND" in
             tell_dns_fqdn PUT $CONTAINER_ID $FQDN $CIDR_ARGS
         fi
         ;;
-    rm-dns)
+    rm-name)
         collect_cidr_args "$@"
         shift $CIDR_COUNT
         [ $# -eq 1 ] || usage
