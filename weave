@@ -28,7 +28,7 @@ usage() {
     echo "weave start      <cidr> [<cidr> ...] <container_id>"
     echo "weave attach     <cidr> [<cidr> ...] <container_id>"
     echo "weave detach     <cidr> [<cidr> ...] <container_id>"
-    echo "weave add-dns    <cidr> [<cidr> ...] <container_id> [-fqdn fqdn]"
+    echo "weave add-dns    <cidr> [<cidr> ...] <container_id> [-h <hostname>]"
     echo "weave rm-dns     <cidr> [<cidr> ...] <container_id>"
     echo "weave expose     <cidr> [<cidr> ...] [-h <hostname>]"
     echo "weave hide       <cidr> [<cidr> ...]"
@@ -817,7 +817,7 @@ case "$COMMAND" in
         if [ $# -eq 1 ]; then
             tell_dns PUT $CONTAINER_ID $CIDR_ARGS
         else
-            [ $# -eq 3 -a "$2" = "-fqdn" ] || usage
+            [ $# -eq 3 -a "$2" = "-h" ] || usage
             FQDN="$3"
             tell_dns_fqdn PUT $CONTAINER_ID $FQDN $CIDR_ARGS
         fi

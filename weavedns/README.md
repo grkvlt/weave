@@ -157,7 +157,7 @@ its hostname, you can register it using the `add-dns` command:
 
 ```bash
 $ docker start $shell2
-$ weave add-dns 10.2.1.27/24 $shell2 -fqdn shell2.weave.local
+$ weave add-dns 10.2.1.27/24 $shell2 -h shell2.weave.local
 ```
 
 The inverse operation can be carried out using the `rm-dns` command:
