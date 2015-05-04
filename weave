@@ -27,9 +27,9 @@ usage() {
     echo "weave run        [--with-dns] <cidr> [<cidr> ...] <docker run args> ..."
     echo "weave start      <cidr> [<cidr> ...] <container_id>"
     echo "weave attach     <cidr> [<cidr> ...] <container_id>"
-    echo "weave detach     <cidr> [<cidr> ...] <container_id>"
+    echo "weave detach     [<cidr> ...] <container_id>"
     echo "weave add-name   <cidr> [<cidr> ...] <container_id> [-h <hostname>]"
-    echo "weave rm-name    <cidr> [<cidr> ...] <container_id>"
+    echo "weave rm-name    [<cidr> ...] <container_id> [-h <hostname>]"
     echo "weave expose     <cidr> [<cidr> ...] [-h <hostname>]"
     echo "weave hide       <cidr> [<cidr> ...]"
     echo "weave ps         [<container_id> ...]"
@@ -399,7 +399,12 @@ attach() {
 detach() {
     netnsenter ip link show $CONTAINER_IFNAME >/dev/null 2>&1 || return 0
 
-    for ADDR; do
+    if [ $# -eq 0 ] ; then
+        CONTAINER_IPS="$(netnsenter ip addr show dev $CONTAINER_IFNAME | sed -n -e 's/inet \([^/]*\)\/\(.*\)/\1/p')"
+    else
+        CONTAINER_IPS="$@"
+    fi
+    for ADDR in $CONTAINER_IPS; do
         if ! netnsenter ip addr show dev $CONTAINER_IFNAME | grep -F $ADDR >/dev/null ; then
             # address is not there, leave the device alone
             continue
@@ -544,7 +549,11 @@ tell_dns() {
     METHOD="$1"
     CONTAINER_ID="$2"
     shift 2
-    CONTAINER_FQDN=$(docker inspect --format='{{.Config.Hostname}}.{{.Config.Domainname}}.' $CONTAINER_ID 2>/dev/null) && true
+    if [ "$METHOD" = "DELETE" ] ; then
+        CONTAINER_FQDN="*"
+    else
+        CONTAINER_FQDN=$(docker inspect --format='{{.Config.Hostname}}.{{.Config.Domainname}}.' $CONTAINER_ID 2>/dev/null) && true
+    fi
     tell_dns_fqdn $METHOD $CONTAINER_ID $CONTAINER_FQDN $@
 }
 
@@ -563,9 +572,13 @@ tell_dns_fqdn() {
     # get the long form of the container ID
     CONTAINER=$(docker inspect --format='{{.Id}}' $CONTAINER_ID 2>/dev/null)
     MORE_ARGS="--data-urlencode fqdn=$CONTAINER_FQDN"
-    for ADDR; do
-        http_call $DNS_CONTAINER_NAME $DNS_HTTP_PORT $METHOD /name/$CONTAINER/${ADDR%/*} $MORE_ARGS || true
-    done
+    if [ $# -eq 0 -a $METHOD = "DELETE" ] ; then
+        http_call $DNS_CONTAINER_NAME $DNS_HTTP_PORT $METHOD /name/$CONTAINER/* $MORE_ARGS || true
+    else
+        for ADDR; do
+            http_call $DNS_CONTAINER_NAME $DNS_HTTP_PORT $METHOD /name/$CONTAINER/${ADDR%/*} $MORE_ARGS || true
+        done
+    fi
 }
 
 # Tell the newly-started weaveDNS about existing weave IPs
@@ -826,9 +839,15 @@ case "$COMMAND" in
     rm-name)
         collect_cidr_args "$@"
         shift $CIDR_COUNT
-        [ $# -eq 1 ] || usage
+        [ $# -ge 1 ] || usage
         CONTAINER_ID="$1"
-        tell_dns DELETE $CONTAINER_ID $CIDR_ARGS
+        if [ $# -eq 1 ]; then
+            tell_dns DELETE $CONTAINER_ID $CIDR_ARGS
+        else
+            [ $# -eq 3 -a "$2" = "-h" ] || usage
+            FQDN="$3"
+            tell_dns_fqdn DELETE $CONTAINER_ID $FQDN $CIDR_ARGS
+        fi
         ;;
     expose)
         collect_cidr_args "$@"
